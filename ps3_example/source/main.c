@@ -24,6 +24,8 @@
 // font 2: 255 chr from 0 to 254, 8 x 8 pix 1 bit depth
 extern unsigned char msx[];
 
+#include "console.h"
+
 #include "ff.h"
 
 #define SDTEST
@@ -121,7 +123,7 @@ FRESULT scan_files (
     UINT i = 0;
     static FILINFO fno;
 
-
+    DPrintf("Listing path contents for '%s'", path);
     res = f_opendir(&dir, path);                       /* Open the directory */
     if (res == FR_OK)
     {
@@ -131,14 +133,14 @@ FRESULT scan_files (
             if (res1 != FR_OK || fno.fname[0] == 0) 
             {
                 //res1 = disk_status(dir.obj.fs->pdrv);
-                snprintf (fdld[i], 255, "%x !f_readdir %s drive %d ssize %d", res1, path, dir.obj.fs->pdrv, 0/*dir.obj.fs->ssize*/);
+                DPrintf("%x !f_readdir %s drive %d ssize %d\n", res1, path, dir.obj.fs->pdrv, 0/*dir.obj.fs->ssize*/);
                 //
                 f_closedir(&dir);
                 return res;  /* Break on error or end of dir */
             }
             if (fno.fattrib & AM_DIR) 
             {                    /* It is a directory */
-                snprintf (fdld[i], 255, "/%s", fno.fname);
+                DPrintf("/%s\n", fno.fname);
                 //sprintf(&path[i], "/%s", fno.fname);
                 //res = scan_files(path);                    /* Enter the directory */
                 //if (res != FR_OK) break;
@@ -146,7 +148,7 @@ FRESULT scan_files (
             } 
             else 
             {                                       /* It is a file. */
-                snprintf (fdld[i], 255, "%s", fno.fname);
+                DPrintf("%s\n", fno.fname);
                 //printf("%s/%s\n", path, fno.fname);
             }
         }
@@ -186,7 +188,7 @@ int sdopen2 (int i)
         return ret;
     }
     ret = f_opendir (&fdir, lbuf);
-    snprintf (fdld[i], 255, "%d f_opendir %s drive %d", ret, lbuf, i/*dir.obj.fs->ssize*/);
+    DPrintf("%d f_opendir %s drive %d\n", ret, lbuf, i/*dir.obj.fs->ssize*/);
     if (ret == FR_OK)
         f_closedir (&fdir);
     f_mount(0, lbuf, 0);                    /* Mount the default drive */
@@ -206,6 +208,7 @@ int fatfs_init()
         //f_mount(fs, lbuf, 0);                    /* Mount the default drive */
         fdld[k][0] = '\0';
         fddr[k] = sdopen(k);
+        DPrintf("drive %d open result %d for 0x%llx\n", k, fddr[k], (long long unsigned int)ff_ps3id[k]);
         //fddr[i] = f_opendir (&fdir, lbuf);
         //if (fddr[i] == FR_OK)
         //    f_closedir (&fdir);
@@ -214,98 +217,6 @@ int fatfs_init()
     return 0;
 }
 #endif
-// draw one background color in virtual 2D coordinates
-
-void DrawBackground2D(u32 rgba)
-{
-    tiny3d_SetPolygon(TINY3D_QUADS);
-
-    tiny3d_VertexPos(0  , 0  , 65535);
-    tiny3d_VertexColor(rgba);
-
-    tiny3d_VertexPos(847, 0  , 65535);
-
-    tiny3d_VertexPos(847, 511, 65535);
-
-    tiny3d_VertexPos(0  , 511, 65535);
-    tiny3d_End();
-}
-
-void drawScene()
-{
-	float x, y;
-    char lbuf[256];
-
-    tiny3d_Project2D(); // change to 2D context (remember you it works with 848 x 512 as virtual coordinates)
-    //DrawBackground2D(0x0040ffff) ; // light blue 
-    DrawBackground2D(0x000000ff) ; // light blue 
-
-    SetFontSize(8, 8);
-    
-    x= 0.0; y = 0.0;
-
-    SetCurrentFont(2);
-    SetFontColor(0xffffffff, 0x0);
-    int i;
-    for (i = 0; i < 8; i++)
-    {
-        snprintf(lbuf, 255, "drive %d open result %d for 0x%llx", i, fddr[i], (long long unsigned int)ff_ps3id[i]);
-        DrawString(x,y, lbuf);
-        y += 8;
-    }
-    for (i = 0; i < 8; i++)
-    {
-        DrawString(x,y, fdld[i]);
-        y += 8;
-    }
-    #if 0
-    SetFontColor(0x00ff00ff, 0x0);
-    SetCurrentFont(0);
-    x = DrawString(x,y, "Hermes ");
-    SetCurrentFont(1);
-    SetFontColor(0xffffffff, 0x0);
-    x = DrawString(x,y, "and this is one sample working with\nfonts.");
-
-    SetCurrentFont(2);
-    
-    x= 0; y += 64;
-    SetCurrentFont(1);
-    DrawString(x, y, "I am using 3 fonts:");
-    
-    SetCurrentFont(0);
-    y += 64;
-    SetFontColor(0xffffffff, 0x00a000ff);
-    DrawString(x, y, "Font 0 is one array of 224 chars 16 x 32 pix and 2 bit depth");
-
-    SetCurrentFont(1);
-    y += 64;
-    SetFontColor(0xffffffff, 0xa00000ff);
-    DrawString(x, y, "Font 1 is one array of 224 chars 16 x 32 pix and 2 bit depth");
-
-    SetCurrentFont(2);
-    y += 64;
-    SetFontColor(0x000000ff, 0xffff00ff);
-    DrawString(x, y, "Font 2 is one array of 255 chars 8 x 8 pix and 1 bit depth");
-
-    y += 64;
-    SetCurrentFont(1);
-    SetFontSize(32, 64);
-    SetFontColor(0xffffffff, 0x000000ff);
-    SetFontAutoCenter(1);
-    DrawString(0, y, "You can resize letters");
-    SetFontAutoCenter(0);
-
-    SetFontSize(12, 24);
-    SetFontColor(0xffffffff, 0x00000000);
-    y += 72;
-    DrawString(0, y, "change the color, background color and center the text\nwith SetFontAutoCenter()");
-    y += 72;
-
-    SetFontColor(0x00ff00ff, 0x00000000);
-    DrawFormatString(0, y, "Here %s font 0 uses %i bytes as texture", "using DrawFormatString()", 224*(16*2/8)*32);
-    #endif
-}
-
 
 void LoadTexture()
 {
@@ -328,20 +239,20 @@ void LoadTexture()
 //1st
 int app_init (int dat)
 {
-    fatfs_init();
+    //debug console
+    initConsole ();
+    //fatfs test
+    fatfs_init ();
 
-    tiny3d_Init(1024*1024);
+    tiny3d_Init (1024*1024);
 
-	ioPadInit(7);
+	ioPadInit (7);
 
 	// Load texture
-
-    LoadTexture();
-    int i;
-    for (i = 0; i < 8; i++)
-    {
-        fddr[i] = sdopen(i);
-    }
+    LoadTexture ();
+    //
+    DbgHeader("FATFS EXFAT Example");
+    DbgMess("Press x/cross to exit");
     //
     return 1;
 }
@@ -376,23 +287,8 @@ int app_update(int dat)
 int app_render(int dat)
 {
     /* DRAWING STARTS HERE */
-
-    // clear the screen, buffer Z and initializes environment to 2D
-
-    tiny3d_Clear(0xff000000, TINY3D_CLEAR_ALL);
-
-    // Enable alpha Test
-    tiny3d_AlphaTest(1, 0x10, TINY3D_ALPHA_FUNC_GEQUAL);
-
-    // Enable alpha blending.
-    tiny3d_BlendFunc(1, TINY3D_BLEND_FUNC_SRC_RGB_SRC_ALPHA | TINY3D_BLEND_FUNC_SRC_ALPHA_SRC_ALPHA,
-        TINY3D_BLEND_FUNC_DST_RGB_ONE_MINUS_SRC_ALPHA | TINY3D_BLEND_FUNC_DST_ALPHA_ZERO,
-        TINY3D_BLEND_RGB_FUNC_ADD | TINY3D_BLEND_ALPHA_FUNC_ADD);
-
-    drawScene(); // Draw
-
-    /* DRAWING FINISH HERE */
-
+    DbgDraw();
+    //
     tiny3d_Flip();
 
     return 1;
@@ -420,6 +316,7 @@ s32 main(s32 argc, const char* argv[])
 	}
     //5
     app_cleanup(0);
+    //
 	return 0;
 }
 
