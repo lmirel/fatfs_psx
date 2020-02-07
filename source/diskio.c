@@ -168,6 +168,49 @@ DRESULT disk_write (
 )
 {
 	DRESULT res = RES_PARERR;
+    int flag = ((int) (s64) buff) & 31;
+	int fd = pdrv;
+
+    if (dev_fd[fd] < 0  || !buff)
+		return RES_PARERR;
+
+    void *my_buff;
+    
+    if (flag) 
+		my_buff = memalign(32, dev_sectsize[fd] * count);
+	else
+		my_buff = (void *) buff;
+
+    uint32_t sectors_read;
+
+    if (!my_buff)
+		return RES_ERROR;
+    
+    if (flag)
+		memcpy(my_buff, buff, dev_sectsize[fd] * count);
+
+    int r;
+	res = RES_OK;
+	r = sys_storage_write(dev_fd[fd], (uint32_t) sector, (uint32_t) count, 
+		(uint8_t *) my_buff, &sectors_read);
+
+	if (r == 0x80010002) 
+	{
+		//PS3_NTFS_Shutdown(fd); 
+		return RES_NOTRDY;
+	}
+	if (r == 0)
+		return RES_ERROR;
+	usleep(62500);
+
+    if (flag)
+		free(my_buff);
+
+    if (r < 0)
+		return RES_ERROR;
+
+    if (sectors_read != count)
+		return RES_ERROR;
 
 	return res;
 }
@@ -186,7 +229,52 @@ DRESULT disk_ioctl (
 )
 {
 	DRESULT res = RES_PARERR;
+	if (dev_fd[pdrv] < 0)
+	{
+		return RES_NOTRDY;
+	}
+	res = RES_PARERR;
+	switch (cmd) 
+	{
+		case CTRL_SYNC:			/* Nothing to do */
+			res = RES_OK;
+			break;
 
+		case GET_SECTOR_COUNT:	/* Get number of sectors on the drive */
+		{
+			static device_info_t disc_info;
+			disc_info.unknown03 = 0x12345678; // hack for Iris Manager Disc Less
+			disc_info.sector_size = 0;
+			int rr = sys_storage_get_device_info(ff_ps3id[pdrv], &disc_info);
+			if (rr != 0)
+			{
+				return RES_ERROR;
+			}
+			*(LBA_t*)buff = disc_info.total_sectors;
+			res = RES_OK;
+		}
+			break;
+
+		case GET_SECTOR_SIZE:	/* Get size of sector for generic read/write */
+		{
+			static device_info_t disc_info;
+			disc_info.unknown03 = 0x12345678; // hack for Iris Manager Disc Less
+			disc_info.sector_size = 0;
+			int rr = sys_storage_get_device_info(ff_ps3id[pdrv], &disc_info);
+			if (rr != 0)
+			{
+				return RES_ERROR;
+			}
+			*(WORD*)buff = disc_info.sector_size;
+			res = RES_OK;
+		}
+			break;
+
+		case GET_BLOCK_SIZE:	/* Get internal block size in unit of sector */
+			//*(DWORD*)buff = SZ_BLOCK;
+			res = RES_PARERR;
+			break;
+	}
 	return res;
 }
 
