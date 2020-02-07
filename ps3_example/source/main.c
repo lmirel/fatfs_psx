@@ -81,6 +81,7 @@ int app_cleanup (int dt);   //5
 int fddr[8] = {0};
 char fdld[8][256];
 char fn[256] = {0};
+char wn[256] = {0};
 char dn[256] = {0};
 static u64 ff_ps3id[8] = {
 	0x010300000000000AULL, 0x010300000000000BULL, 0x010300000000000CULL, 0x010300000000000DULL,
@@ -166,6 +167,7 @@ FRESULT scan_files (
             {                    /* It is a directory */
                 DPrintf("/%s\n", fno.fname);
                 snprintf (dn, 255, "%s%s", path, fno.fname);
+                snprintf (wn, 255, "%s%s/fatfs.tst", path, fno.fname);
             } 
             else 
             {                                       /* It is a file. */
@@ -238,15 +240,6 @@ int fatfs_init()
         //f_mount(0, lbuf, 0);                    /* Mount the default drive */
     }
     //
-    if (*fn)
-    {
-        DPrintf("\npress triangle to list contents of file '%s'\n", fn);
-    }
-    if (*dn)
-    {
-        DPrintf("\npress rectangle to list contents of dir '%s'\n", dn);
-    }
-    //
     return 0;
 }
 #endif
@@ -269,6 +262,76 @@ void LoadTexture()
 
     // here you can add more textures using 'texture_pointer'. It is returned aligned to 16 bytes
 }
+//create file
+int file_read(char *fname);
+int file_create (char *fname)
+{
+    FATFS fs;      /* Work area (filesystem object) for logical drives */
+    FIL fdst;      /* File objects */
+    char buffer[] = "ThiS is A TeSt FiLe FoR wRiTiNg TeSt.";   /* File copy buffer */
+    FRESULT fr;          /* FatFs function common result code */
+    UINT bw;         /* File read/write count */
+
+    /* Register work area for each logical drive */
+    char dn[5];
+    snprintf(dn, 4, "%.3s", fname);
+    DPrintf("mounting drive '%s'\n", dn);
+    DPrintf("writing to file '%s':\n", fname);
+    f_mount(&fs, dn, 0);
+
+    /* Create destination file on the drive 0 */
+    fr = f_open(&fdst, fname, FA_WRITE | FA_CREATE_ALWAYS);
+    if (fr)
+    {
+        DPrintf("!failed creating the file '%s' result %d\n", fname, fr);
+        /* Unregister work area prior to discard it */
+        f_mount(0, dn, 0);
+        return (int)fr;
+    }
+    /* Copy source to destination */
+    fr = f_write(&fdst, (const void *)buffer, sizeof(buffer), &bw);            /* Write it to the destination file */
+    if (fr != FR_OK)
+    {
+        DPrintf("!failed writing to file '%s' result %d wrote %d bytes\n", fname, fr, bw);
+    }
+    /* Close open files */
+    f_close(&fdst);
+
+    /* Unregister work area prior to discard it */
+    f_mount(0, dn, 0);
+    //read test
+    file_read (fname);
+    //
+    return (int)fr;
+}
+//
+int file_new(char *fname)
+{
+    if(!fname || !*fname)
+        return 0;
+    //debug console
+    initConsole ();
+    DbgHeader("File create test");
+    DbgMess("Press o/circle to return");
+    //
+    file_create (fname);
+    //
+    int btn = 0;
+    //
+    while(1)
+    {
+        //2 input
+        btn = app_input(0);
+        if (btn & PAD_CI_MASK)
+            break;
+        //3
+		//4
+        DbgDraw();
+        tiny3d_Flip();
+    }
+    return 0;
+}
+
 //dir contents
 int dir_read (char *dname)
 {
@@ -361,7 +424,13 @@ int file_read(char *fname)
 
     /* Open a text file */
     fr = f_open(&fil, fname, FA_READ);
-    if (fr) return (int)fr;
+    if (fr)
+    {
+        DPrintf("!failed opening the file '%s' result %d\n", fname, fr);
+        //
+        f_mount(0, dn, 0);
+        return (int)fr;
+    }
 
     /* Read every line and display it */
     while (f_gets(line, sizeof (line), &fil)) 
@@ -523,14 +592,19 @@ int app_cleanup(int dat)
     return 1;
 }
 //restore app state after other module was executed
-int _app_restore ()
+int _app_restore (char init)
 {
-    initConsole ();
+    if (init)
+        initConsole ();
     DbgHeader("FATFS EXFAT Example");
     DbgMess("Press o/circle to exit");
     if (*fn)
     {
         DPrintf("\npress triangle to list contents of file '%s'\n", fn);
+    }
+    if (*wn)
+    {
+        DPrintf("\npress cross to create a test file '%s'\n", wn);
     }
     if (*dn)
     {
@@ -542,8 +616,9 @@ int _app_restore ()
 s32 main(s32 argc, const char* argv[])
 {
     //1 init
-	app_init(0);
+	app_init (0);
     int btn = 0;
+    _app_restore (0);
 	// Ok, everything is setup. Now for the main loop.
 	while(1) 
     {
@@ -551,19 +626,26 @@ s32 main(s32 argc, const char* argv[])
         btn = app_input(0);
         if (btn & PAD_CI_MASK)
             break;
+        //file create
+        else if(btn & PAD_CR_MASK)
+        {
+            file_new(wn);
+            //
+            _app_restore(1);
+        }
         //file contents
         else if(btn & PAD_TR_MASK)
         {
             file_run(fn);
             //
-            _app_restore();
+            _app_restore(1);
         }
         //dir listing
         else if(btn & PAD_SQ_MASK)
         {
             dir_run(dn);
             //
-            _app_restore();
+            _app_restore(1);
         }
         //3
         app_update(0);
