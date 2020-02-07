@@ -194,6 +194,8 @@ int sdopen (int i)
     if (ret != FR_OK)
         return ret;
     ret = scan_files(lbuf); //f_opendir (&fdir, lbuf);
+    if (ret == FR_OK)
+        DPrintf("fs on %s drive %d ssize %d csize %d\n", lbuf, i, fs.ssize, fs.csize);
     f_mount(NULL, lbuf, 0);                    /* UnMount the default drive */
     //
     return ret;
@@ -203,21 +205,18 @@ int sdopen2 (int i)
 {
     FDIR fdir;
     char lbuf[10];
-    FATFS *fs;     /* Ponter to the filesystem object */
-    fs = malloc(sizeof (FATFS));           /* Get work area for the volume */
+    FATFS fs;     /* Ponter to the filesystem object */
     snprintf(lbuf, 10, "%d:/", i);
-    int ret = f_mount(fs, lbuf, 0);                    /* Mount the default drive */
+    int ret = f_mount(&fs, lbuf, 0);                    /* Mount the default drive */
     if (ret != FR_OK)
     {
-        free(fs);
         return ret;
     }
     ret = f_opendir (&fdir, lbuf);
-    DPrintf("%d f_opendir %s drive %d\n", ret, lbuf, i/*dir.obj.fs->ssize*/);
+    DPrintf("%d f_opendir %s drive %d ssize %d csize %d\n", ret, lbuf, i, fs.ssize, fs.csize);
     if (ret == FR_OK)
         f_closedir (&fdir);
     f_mount(0, lbuf, 0);                    /* Mount the default drive */
-    free(fs);
     //
     return ret;
 }
@@ -268,9 +267,9 @@ int file_create (char *fname)
 {
     FATFS fs;      /* Work area (filesystem object) for logical drives */
     FIL fdst;      /* File objects */
-    char buffer[] = "ThiS is A TeSt FiLe FoR wRiTiNg TeSt.";   /* File copy buffer */
-    FRESULT fr;          /* FatFs function common result code */
-    UINT bw;         /* File read/write count */
+    BYTE buffer[] = "ThiS is A TeSt FiLe FoR wRiTiNg.\0";   /* File copy buffer */
+    FRESULT fr;    /* FatFs function common result code */
+    UINT bw;       /* File read/write count */
 
     /* Register work area for each logical drive */
     char dn[5];
@@ -289,11 +288,9 @@ int file_create (char *fname)
         return (int)fr;
     }
     /* Copy source to destination */
-    fr = f_write(&fdst, (const void *)buffer, sizeof(buffer), &bw);            /* Write it to the destination file */
-    if (fr != FR_OK)
-    {
-        DPrintf("!failed writing to file '%s' result %d wrote %d bytes\n", fname, fr, bw);
-    }
+    fr = f_write(&fdst, buffer, sizeof(buffer), &bw);            /* Write it to the destination file */
+    if (fr != FR_OK || bw != sizeof(buffer))
+        DPrintf("!failed writing to file '%s' result %d wrote %d bytes vs %d\n", fname, fr, bw, sizeof(buffer));
     /* Close open files */
     f_close(&fdst);
 
@@ -598,17 +595,18 @@ int _app_restore (char init)
         initConsole ();
     DbgHeader("FATFS EXFAT Example");
     DbgMess("Press o/circle to exit");
+    DPrintf("\n");
     if (*fn)
     {
-        DPrintf("\npress triangle to list contents of file '%s'\n", fn);
+        DPrintf("press triangle to list contents of file '%s'\n", fn);
     }
     if (*wn)
     {
-        DPrintf("\npress cross to create a test file '%s'\n", wn);
+        DPrintf("press cross to create a test file '%s'\n", wn);
     }
     if (*dn)
     {
-        DPrintf("\npress rectangle to list contents of dir '%s'\n", dn);
+        DPrintf("press rectangle to list contents of dir '%s'\n", dn);
     }
     return 0;
 }
