@@ -300,6 +300,9 @@ typedef enum {
 	FR_DBG_ERR3,
 	FR_DBG_ERR4,
 	FR_DBG_ERR5,
+	FR_DBG_ERR6,
+	FR_DBG_ERR7,
+	FR_DBG_ERR8,
 } FRESULT;
 
 

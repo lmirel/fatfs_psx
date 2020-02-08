@@ -317,12 +317,13 @@ void LoadTexture()
     // here you can add more textures using 'texture_pointer'. It is returned aligned to 16 bytes
 }
 //create file
+//f_write > create_chain > find_bitmap
 int file_read(char *fname);
 int file_create (char *fname)
 {
     FATFS fs;      /* Work area (filesystem object) for logical drives */
     FIL fdst;      /* File objects */
-    BYTE buffer[] = "ThiS is A TeSt FiLe FoR wRiTiNg.\0";   /* File copy buffer */
+    BYTE buffer[] = "ThiS is A TeSt FiLe FoR wRiTiNg.\n\0";   /* File copy buffer */
     FRESULT fr;    /* FatFs function common result code */
     UINT bw;       /* File read/write count */
 

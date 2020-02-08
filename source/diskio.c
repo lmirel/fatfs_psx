@@ -9,7 +9,8 @@
 
 #include "ff.h"			/* Obtains integer types */
 #include "diskio.h"		/* Declarations of disk functions */
-
+#define NPrintf(...)
+//extern void NPrintf(const char* fmt, ...);
 /* Definitions of physical drive number for each drive */
 #define DEV_RAM		0	/* Example: Map Ramdisk to physical drive 0 */
 #define DEV_MMC		1	/* Example: Map MMC/SD card to physical drive 1 */
@@ -170,10 +171,13 @@ DRESULT disk_write (
 	DRESULT res = RES_PARERR;
     int flag = ((int) (s64) buff) & 31;
 	int fd = pdrv;
+	NPrintf(">disk_write:%d s %lu c %d\n", pdrv, sector, count);
 
     if (dev_fd[fd] < 0  || !buff)
+	{
+		NPrintf(">disk_write:!fd\n");
 		return RES_PARERR;
-
+	}
     void *my_buff;
     
     if (flag) 
@@ -184,8 +188,10 @@ DRESULT disk_write (
     uint32_t sectors_read;
 
     if (!my_buff)
+	{
+		NPrintf(">disk_write:!buff\n");
 		return RES_ERROR;
-    
+	}
     if (flag)
 		memcpy(my_buff, buff, dev_sectsize[fd] * count);
 
@@ -197,21 +203,31 @@ DRESULT disk_write (
 	if (r == 0x80010002) 
 	{
 		//PS3_NTFS_Shutdown(fd); 
+		NPrintf(">disk_write:!RES_NOTRDY\n");
 		return RES_NOTRDY;
 	}
+#if 0
 	if (r == 0)
+	{
+		NPrintf(">disk_write:!r=0\n");
 		return RES_ERROR;
+	}
+#endif		
 	usleep(62500);
 
     if (flag)
 		free(my_buff);
 
     if (r < 0)
+	{
+		NPrintf(">disk_write:!r<0\n");
 		return RES_ERROR;
-
+	}
     if (sectors_read != count)
+	{
+		NPrintf(">disk_write:!r<>w\n");
 		return RES_ERROR;
-
+	}
 	return res;
 }
 
