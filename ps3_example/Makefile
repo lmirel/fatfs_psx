@@ -40,14 +40,14 @@ INCLUDES	:=	include ../include
 #---------------------------------------------------------------------------------
 # any extra libraries we wish to link with the project
 #---------------------------------------------------------------------------------
-LIBS		:=	../../libfatfs.a -lsysfs -lfont -ltiny3d -lsimdmath -lgcm_sys -lio -lsysutil -lrt -llv2 -lsysmodule -lm
+LIBS		:=	../../libfatfs.a -lsysfs -lfont -ltiny3d -lsimdmath -lgcm_sys -lnet -lio -lsysutil -lrt -llv2 -lsysmodule -lm
 
 
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 
-CFLAGS		=	-O2 -Wall -mcpu=cell $(MACHDEP) $(INCLUDE) -DPS3_GEKKO
+CFLAGS		=	-O2 -Wall -mcpu=cell $(MACHDEP) $(INCLUDE) -DPS3_GEKKO -DDEBUG_IP=\"192.168.2.185\"
 CXXFLAGS	=	$(CFLAGS)
 
 LDFLAGS		=	$(MACHDEP) -Wl,-Map,$(notdir $@).map

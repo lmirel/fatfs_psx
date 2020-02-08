@@ -243,8 +243,7 @@ DRESULT disk_ioctl (
 		case GET_SECTOR_COUNT:	/* Get number of sectors on the drive */
 		{
 			static device_info_t disc_info;
-			disc_info.unknown03 = 0x12345678; // hack for Iris Manager Disc Less
-			disc_info.sector_size = 0;
+			disc_info.total_sectors = 0;
 			int rr = sys_storage_get_device_info(ff_ps3id[pdrv], &disc_info);
 			if (rr != 0)
 			{
@@ -258,7 +257,6 @@ DRESULT disk_ioctl (
 		case GET_SECTOR_SIZE:	/* Get size of sector for generic read/write */
 		{
 			static device_info_t disc_info;
-			disc_info.unknown03 = 0x12345678; // hack for Iris Manager Disc Less
 			disc_info.sector_size = 0;
 			int rr = sys_storage_get_device_info(ff_ps3id[pdrv], &disc_info);
 			if (rr != 0)

@@ -60,7 +60,7 @@
 /  (0:Disable or 1:Enable) */
 
 
-#define FF_USE_FORWARD	0
+#define FF_USE_FORWARD	1
 /* This option switches f_forward() function. (0:Disable or 1:Enable) */
 
 

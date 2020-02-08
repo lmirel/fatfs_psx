@@ -6,8 +6,55 @@
 #include <math.h>
 #include <stdarg.h>
 
+#include "console.h"
+
 #include <tiny3d.h>
 #include <libfont.h>
+
+//network debug via UDP
+#ifndef DEBUG_IP
+#define DEBUG_IP "192.168.2.185"
+#endif
+
+#ifdef DEBUG_IP
+#include <net/net.h>
+#include <netinet/in.h>
+
+static int SocketFD;
+#define DEBUG_PORT 18194
+
+void debugInit()
+{
+  struct sockaddr_in stSockAddr;
+  netInitialize();
+  SocketFD = netSocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+
+  memset(&stSockAddr, 0, sizeof stSockAddr);
+
+  stSockAddr.sin_family = AF_INET;
+  stSockAddr.sin_port = htons(DEBUG_PORT);
+  inet_pton(AF_INET, DEBUG_IP, &stSockAddr.sin_addr);
+
+  netConnect(SocketFD, (struct sockaddr *)&stSockAddr, sizeof stSockAddr);
+	
+  NPrintf("network debug module initialized\n") ;
+  NPrintf("ready to have a lot of fun\n") ;
+}
+#endif
+void NPrintf(const char* fmt, ...)
+{
+#ifdef DEBUG_IP
+  char buffer[0x800];
+  va_list arg;
+  va_start(arg, fmt);
+  vsnprintf(buffer, sizeof(buffer), fmt, arg);
+  va_end(arg);
+  //
+  netSend(SocketFD, buffer, strlen(buffer), 0);
+#else
+  return;
+#endif
+}
 
 /*******************************************************************************************************************************************************/
 /* CONSOLE DEBUG                                                                                                                                       */
@@ -42,6 +89,8 @@ void initConsole()
     con_x = 0; con_y =0;
     dbg_str1[0] = dbg_str2[0] = 0;
     memset(dbg_data, 0, 128 * CONSOLE_HEIGHT);
+    //
+    debugInit();
 }
 
 static char buff[4096];
@@ -93,6 +142,9 @@ void DPrintf(char *format, ...)
 	va_start(opt, format);
 	vsprintf( (void *) buff, format, opt);
 	va_end(opt);
+#ifdef DEBUG_IP
+    netSend(SocketFD, str, strlen(str), 0);
+#endif
 
     while(*str) {
         if(*str == '\n') {

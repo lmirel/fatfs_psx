@@ -179,9 +179,63 @@ FRESULT scan_files (
     }
     else
     {
-        DPrintf("!unable to open path '%s' result %d\n", path, res);
+        ;//DPrintf("!unable to open path '%s' result %d\n", path, res);
     }
     return res;
+}
+#if 0
+fdisk -l /dev/sdb1
+Disk /dev/sdb1: 223.6 GiB, 240055746560 bytes, 468858880 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: dos
+Disk identifier: 0xf4f4f4f4
+
+Device      Boot      Start        End    Sectors  Size Id Type
+/dev/sdb1p1      4109694196 8219388391 4109694196  1.9T f4 SpeedStor
+/dev/sdb1p2      4109694196 8219388391 4109694196  1.9T f4 SpeedStor
+/dev/sdb1p3      4109694196 8219388391 4109694196  1.9T f4 SpeedStor
+/dev/sdb1p4      4109694196 8219388391 4109694196  1.9T f4 SpeedStor
+fsck.exfat /dev/sdb1
+exfatfsck 1.2.5
+Checking file system on /dev/sdb1.
+File system version           1.0
+Sector size                 512 bytes
+Cluster size                128 KB
+Volume size                 224 GB
+Used space                   21 MB
+Available space             224 GB
+#endif
+int fs_info(int i)
+{
+    char lbuf[10];
+    FATFS fs;     /* Ponter to the filesystem object */
+    FDIR fdir;
+    snprintf(lbuf, 10, "%d:/", i);
+    int ret = f_mount(&fs, lbuf, 0);                    /* Mount the default drive */
+    if (ret != FR_OK)
+        return ret;
+    ret = f_opendir (&fdir, lbuf);
+    if (ret == FR_OK)
+    {
+        FATFS *fsp = fdir.obj.fs;
+        DPrintf("fs on '%s' drive: %d, type: %d\n", lbuf, i, fsp->fs_type);
+        DPrintf("sector size: %d, cluster size [sectors]: %d, size of an FAT [sectors]: %d\n", fsp->ssize, fsp->csize, fsp->fsize);
+        DPrintf("number of FAT entries (number of clusters + 2): %d, number of FATs (1 or 2): %d\n", fsp->n_fatent, fsp->n_fats);
+        DPrintf("last cluster: %d, free clusters: %d\n", fsp->last_clst, fsp->free_clst);
+        unsigned long capa = fsp->n_fatent / 1024;
+        capa *= fsp->ssize;
+        capa /= 1024;
+        capa *= fsp->csize;
+        capa /= 1024;
+        DPrintf("capacity: %luGB\n", capa);
+        f_closedir (&fdir);
+    }
+    //
+    f_mount(NULL, lbuf, 0);                    /* UnMount the default drive */
+    //
+    return FR_OK;
 }
 
 int sdopen (int i)
@@ -194,9 +248,10 @@ int sdopen (int i)
     if (ret != FR_OK)
         return ret;
     ret = scan_files(lbuf); //f_opendir (&fdir, lbuf);
-    if (ret == FR_OK)
-        DPrintf("fs on %s drive %d ssize %d csize %d\n", lbuf, i, fs.ssize, fs.csize);
     f_mount(NULL, lbuf, 0);                    /* UnMount the default drive */
+    //
+    if (ret == FR_OK)
+        fs_info(i);
     //
     return ret;
 }

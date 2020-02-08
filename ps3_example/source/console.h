@@ -14,5 +14,7 @@ void DbgDraw();
 
 void DPrintf(char *format, ...);
 
+void NPrintf(const char* fmt, ...);
+
 #endif
 
