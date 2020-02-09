@@ -22,7 +22,6 @@
 #include "ff.h"			/* Declarations of FatFs API */
 #include "diskio.h"		/* Declarations of device I/O functions */
 
-extern void NPrintf(const char* fmt, ...);
 
 /*--------------------------------------------------------------------------
 
@@ -1079,13 +1078,11 @@ static FRESULT sync_window (	/* Returns FR_OK or FR_DISK_ERR */
 
 	if (fs->wflag) {	/* Is the disk access window dirty? */
 		if (disk_write(fs->pdrv, fs->win, fs->winsect, 1) == RES_OK) {	/* Write it back into the volume */
-			NPrintf(">sync_window:*disk_write success\n");
 			fs->wflag = 0;	/* Clear window dirty flag */
 			if (fs->winsect - fs->fatbase < fs->fsize) {	/* Is it in the 1st FAT? */
 				if (fs->n_fats == 2) disk_write(fs->pdrv, fs->win, fs->winsect + fs->fsize, 1);	/* Reflect it to 2nd FAT if needed */
 			}
 		} else {
-			NPrintf(">sync_window:!disk_write fail\n");
 			res = FR_DISK_ERR;
 		}
 	}
@@ -1110,7 +1107,6 @@ static FRESULT move_window (	/* Returns FR_OK or FR_DISK_ERR */
 			if (disk_read(fs->pdrv, fs->win, sect, 1) != RES_OK) {
 				sect = (LBA_t)0 - 1;	/* Invalidate window if read data is not valid */
 				res = FR_DISK_ERR;
-				NPrintf(">move_window:!disk_read fail\n");
 			}
 			fs->winsect = sect;
 		}
@@ -1559,7 +1555,7 @@ static DWORD create_chain (	/* 0:No free cluster, 1:Internal error, 0xFFFFFFFF:D
 	else {				/* Stretch a chain */
 		cs = get_fat(obj, clst);			/* Check the cluster status */
 		if (cs < 2) return 1;				/* Test for insanity */
-		if (cs == 0xFFFFFFFF) return 0xFFFFFFFA;//cs;	/* Test for disk error */
+		if (cs == 0xFFFFFFFF) return cs;	/* Test for disk error */
 		if (cs < fs->n_fatent) return cs;	/* It is already followed by next cluster */
 		scl = clst;							/* Cluster to start to find */
 	}
@@ -1568,11 +1564,10 @@ static DWORD create_chain (	/* 0:No free cluster, 1:Internal error, 0xFFFFFFFF:D
 #if FF_FS_EXFAT
 	if (fs->fs_type == FS_EXFAT) {	/* On the exFAT volume */
 		ncl = find_bitmap(fs, scl, 1);				/* Find a free cluster */
-		if (ncl == 0) return 0xFFFFFFFB;//ncl;	/* No free cluster or hard error? */
-		if (ncl == 0xFFFFFFFF) return 0xFFFFFFFE;//ncl;	/* No free cluster or hard error? */
+		if (ncl == 0 || ncl == 0xFFFFFFFF) return ncl;	/* No free cluster or hard error? */
 		res = change_bitmap(fs, ncl, 1, 1);			/* Mark the cluster 'in use' */
 		if (res == FR_INT_ERR) return 1;
-		if (res == FR_DISK_ERR) return 0xFFFFFFFC;//0xFFFFFFFF;
+		if (res == FR_DISK_ERR) return 0xFFFFFFFF;
 		if (clst == 0) {							/* Is it a new chain? */
 			obj->stat = 2;							/* Set status 'contiguous' */
 		} else {									/* It is a stretched chain */
@@ -1598,7 +1593,7 @@ static DWORD create_chain (	/* 0:No free cluster, 1:Internal error, 0xFFFFFFFF:D
 			ncl = scl + 1;						/* Test if next cluster is free */
 			if (ncl >= fs->n_fatent) ncl = 2;
 			cs = get_fat(obj, ncl);				/* Get next cluster status */
-			if (cs == 1 || cs == 0xFFFFFFFF) return 0xFFFFFFFD;//cs;	/* Test for error */
+			if (cs == 1 || cs == 0xFFFFFFFF) return cs;	/* Test for error */
 			if (cs != 0) {						/* Not free? */
 				cs = fs->last_clst;				/* Start at suggested cluster if it is valid */
 				if (cs >= 2 && cs < fs->n_fatent) scl = cs;
@@ -1615,7 +1610,7 @@ static DWORD create_chain (	/* 0:No free cluster, 1:Internal error, 0xFFFFFFFF:D
 				}
 				cs = get_fat(obj, ncl);			/* Get the cluster status */
 				if (cs == 0) break;				/* Found a free cluster? */
-				if (cs == 1 || cs == 0xFFFFFFFF) return 0xFFFFFFFE;//cs;	/* Test for error */
+				if (cs == 1 || cs == 0xFFFFFFFF) return cs;	/* Test for error */
 				if (ncl == scl) return 0;		/* No free cluster found? */
 			}
 		}
@@ -4033,12 +4028,7 @@ FRESULT f_write (
 				}
 				if (clst == 0) break;		/* Could not allocate a new cluster (disk full) */
 				if (clst == 1) ABORT(fs, FR_INT_ERR);
-				if (clst == 0xFFFFFFFF) ABORT(fs, FR_DBG_ERR1);//FR_DISK_ERR);
-				if (clst == 0xFFFFFFFA) ABORT(fs, FR_DBG_ERR4);
-				if (clst == 0xFFFFFFFB) ABORT(fs, FR_DBG_ERR5);
-				if (clst == 0xFFFFFFFC) ABORT(fs, FR_DBG_ERR6);
-				if (clst == 0xFFFFFFFD) ABORT(fs, FR_DBG_ERR7);
-				if (clst == 0xFFFFFFFE) ABORT(fs, FR_DBG_ERR8);
+				if (clst == 0xFFFFFFFF) ABORT(fs, FR_DISK_ERR);
 				fp->clust = clst;			/* Update current cluster */
 				if (fp->obj.sclust == 0) fp->obj.sclust = clst;	/* Set start cluster if the first write */
 			}
@@ -4046,7 +4036,7 @@ FRESULT f_write (
 			if (fs->winsect == fp->sect && sync_window(fs) != FR_OK) ABORT(fs, FR_DISK_ERR);	/* Write-back sector cache */
 #else
 			if (fp->flag & FA_DIRTY) {		/* Write-back sector cache */
-				if (disk_write(fs->pdrv, fp->buf, fp->sect, 1) != RES_OK) ABORT(fs, FR_DBG_ERR2);//FR_DISK_ERR);
+				if (disk_write(fs->pdrv, fp->buf, fp->sect, 1) != RES_OK) ABORT(fs, FR_DISK_ERR);
 				fp->flag &= (BYTE)~FA_DIRTY;
 			}
 #endif
@@ -4058,7 +4048,7 @@ FRESULT f_write (
 				if (csect + cc > fs->csize) {	/* Clip at cluster boundary */
 					cc = fs->csize - csect;
 				}
-				if (disk_write(fs->pdrv, wbuff, sect, cc) != RES_OK) ABORT(fs, FR_DBG_ERR3);//FR_DISK_ERR);
+				if (disk_write(fs->pdrv, wbuff, sect, cc) != RES_OK) ABORT(fs, FR_DISK_ERR);
 #if FF_FS_MINIMIZE <= 2
 #if FF_FS_TINY
 				if (fs->winsect - sect < cc) {	/* Refill sector cache if it gets invalidated by the direct write */

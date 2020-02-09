@@ -9,14 +9,15 @@
 
 #include "ff.h"			/* Obtains integer types */
 #include "diskio.h"		/* Declarations of disk functions */
-#define NPrintf(...)
-//extern void NPrintf(const char* fmt, ...);
+
 /* Definitions of physical drive number for each drive */
 #define DEV_RAM		0	/* Example: Map Ramdisk to physical drive 0 */
 #define DEV_MMC		1	/* Example: Map MMC/SD card to physical drive 1 */
 #define DEV_USB		2	/* Example: Map USB MSD to physical drive 2 */
 
 /* PS3 I/O support */
+#define SYSIO_RETRY	10
+
 typedef struct {
     int device;
     void *dirStruct;
@@ -124,20 +125,31 @@ DRESULT disk_read (
     if(!my_buff) 
 		return RES_ERROR;
 
-    int r;
     uint32_t sectors_read;
-
+    int r, k;
 	res = RES_OK;
-	r = sys_storage_read(dev_fd[fd], (uint32_t) sector, (uint32_t) count, 
-		(uint8_t *) my_buff, &sectors_read); 
-
-	if(r == 0x80010002) 
+	for (k = 0; k < SYSIO_RETRY; k++)
 	{
-		return RES_NOTRDY;//PS3_NTFS_Shutdown(fd);
+		r = sys_storage_read(dev_fd[fd], (uint32_t) sector, (uint32_t) count, 
+			(uint8_t *) my_buff, &sectors_read); 
+
+		if(r == 0x80010002 || r == 0)
+		{
+			break;
+		}
+
+		usleep(62500);
 	}
-
-	usleep(62500);
-
+	if(r == 0x80010002) //sys error
+	{
+		if(flag) 
+		{
+			free(my_buff);
+		}
+		//drive unplugged? detach?
+		return RES_NOTRDY;
+	}
+	
     if(flag) 
 	{
 		if(r>=0)
@@ -150,6 +162,7 @@ DRESULT disk_read (
 
     if(sectors_read != count) 
 		return RES_ERROR;
+	
 	return res;
 }
 
@@ -171,11 +184,9 @@ DRESULT disk_write (
 	DRESULT res = RES_PARERR;
     int flag = ((int) (s64) buff) & 31;
 	int fd = pdrv;
-	NPrintf(">disk_write:%d s %lu c %d\n", pdrv, sector, count);
 
     if (dev_fd[fd] < 0  || !buff)
 	{
-		NPrintf(">disk_write:!fd\n");
 		return RES_PARERR;
 	}
     void *my_buff;
@@ -189,45 +200,43 @@ DRESULT disk_write (
 
     if (!my_buff)
 	{
-		NPrintf(">disk_write:!buff\n");
 		return RES_ERROR;
 	}
     if (flag)
 		memcpy(my_buff, buff, dev_sectsize[fd] * count);
 
-    int r;
+    int r, k;
 	res = RES_OK;
-	r = sys_storage_write(dev_fd[fd], (uint32_t) sector, (uint32_t) count, 
-		(uint8_t *) my_buff, &sectors_read);
-
-	if (r == 0x80010002) 
+	for (k = 0; k < SYSIO_RETRY; k++)
 	{
-		//PS3_NTFS_Shutdown(fd); 
-		NPrintf(">disk_write:!RES_NOTRDY\n");
-		return RES_NOTRDY;
-	}
-#if 0
-	if (r == 0)
-	{
-		NPrintf(">disk_write:!r=0\n");
-		return RES_ERROR;
-	}
-#endif		
-	usleep(62500);
+		r = sys_storage_write(dev_fd[fd], (uint32_t) sector, (uint32_t) count, 
+			(uint8_t *) my_buff, &sectors_read);
 
+		if (r == 0x80010002 || r ==0)
+		{
+			break;
+		}
+
+		usleep(62500);
+	}
     if (flag)
 		free(my_buff);
-
+	
+	if (r == 0x80010002) //sys error
+	{
+		return RES_NOTRDY;//drive unplugged? detach from FS?
+	}
+	
     if (r < 0)
 	{
-		NPrintf(">disk_write:!r<0\n");
 		return RES_ERROR;
 	}
+
     if (sectors_read != count)
 	{
-		NPrintf(">disk_write:!r<>w\n");
 		return RES_ERROR;
 	}
+
 	return res;
 }
 
