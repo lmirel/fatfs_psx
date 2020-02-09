@@ -290,6 +290,8 @@ int fatfs_init()
         DPrintf("open drive %d result %d for 0x%llx\n", k, fddr[k], (long long unsigned int)ff_ps3id[k]);
         if (fddr[k] == FR_OK)
             sdopen (k);
+        else
+            fflib_detach (k);
     }
     //
     return 0;
