@@ -18,56 +18,47 @@
 /* PS3 I/O support */
 #define SYSIO_RETRY	10
 
-typedef struct {
-    int device;
-    void *dirStruct;
-} DIR_ITER;
-
 #include "types.h"
-#include "iosupport.h"
 #include "storage.h"
 #include <malloc.h>
 #include <sys/file.h>
 #include <lv2/mutex.h> 
 #include <sys/errno.h>
 
-static u64 ff_ps3id[8] = {
-	0x010300000000000AULL, 0x010300000000000BULL, 0x010300000000000CULL, 0x010300000000000DULL,
-	0x010300000000000EULL, 0x010300000000000FULL, 0x010300000000001FULL, 0x0103000000000020ULL 
-	};
-static int dev_fd[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
-static int dev_sectsize[8] = {512, 512, 512, 512, 512, 512, 512, 512};
+#include "psx_io.h"
+
 # if 0
 DWORD get_fattime (void)
 {
 	return ((DWORD)(FF_NORTC_YEAR - 1980) << 25 | (DWORD)FF_NORTC_MON << 21 | (DWORD)FF_NORTC_MDAY << 16);
 }
 #endif
-static DSTATUS ps3fatfs_init(int fd)
+static DSTATUS fatfs_dev_init(int idx)
 {
-    int rr;
+    int rr, ss;
 	static device_info_t disc_info;
 	disc_info.unknown03 = 0x12345678; // hack for Iris Manager Disc Less
 	disc_info.sector_size = 0;
-	rr=sys_storage_get_device_info(ff_ps3id[fd], &disc_info);
+	u64 id = fflib_id_get (idx);
+	if (id == 0)
+		return RES_PARERR;
+	rr = sys_storage_get_device_info (id, &disc_info);
 	if(rr != 0)  
 	{
-		dev_sectsize[fd] = 512; 
-		//return STA_NOINIT;
+		ss = 512; 
 	}
+	ss = disc_info.sector_size;
 
-	dev_sectsize[fd]  = disc_info.sector_size;
-
-	if(dev_fd[fd] >= 0)
+	if(fflib_fd_get (idx) >= 0)
 		return RES_OK;
-
-	if(sys_storage_open(ff_ps3id[fd], &dev_fd[fd])<0) 
+	int fd;
+	if(sys_storage_open (id, &fd) < 0) 
 	{
-		dev_fd[fd] = -1; 
-		return STA_NOINIT;
+		return RES_NOTRDY;
 	}
+	fflib_fd_set (idx, fd);
+	fflib_ss_set (idx, ss);
 
-	dev_sectsize[fd] = disc_info.sector_size;
 	return RES_OK;
 }
 
@@ -79,10 +70,10 @@ DSTATUS disk_status (
 	BYTE pdrv		/* Physical drive nmuber to identify the drive */
 )
 {
-	if(dev_fd[pdrv] >= 0)
-		return 0;
+	if (fflib_fd_get (pdrv) > 0)
+		return RES_OK;
 	//
-	return STA_NOINIT;
+	return RES_ERROR;
 }
 
 
@@ -94,7 +85,7 @@ DSTATUS disk_initialize (
 	BYTE pdrv				/* Physical drive nmuber to identify the drive */
 )
 {
-	return ps3fatfs_init (pdrv);
+	return fatfs_dev_init (pdrv);
 }
 
 /*-----------------------------------------------------------------------*/
@@ -109,16 +100,17 @@ DRESULT disk_read (
 )
 {
 	DRESULT res = RES_PARERR;
-	int fd = pdrv;
+	int fd = fflib_fd_get (pdrv);
+	int ss = fflib_ss_get (pdrv);
     int flag = ((int) (s64) buff) & 31;
 
-    if(dev_fd[fd] < 0 || !buff) 
+    if (fd < 0 || !buff || ss < 0)
 		return RES_PARERR;
 
     void *my_buff;
     
     if(flag) 
-		my_buff = memalign(16, dev_sectsize[fd] * count); 
+		my_buff = memalign (16, ss * count); 
 	else 
 		my_buff = buff;
 
@@ -130,7 +122,7 @@ DRESULT disk_read (
 	res = RES_OK;
 	for (k = 0; k < SYSIO_RETRY; k++)
 	{
-		r = sys_storage_read(dev_fd[fd], (uint32_t) sector, (uint32_t) count, 
+		r = sys_storage_read (fd, (uint32_t) sector, (uint32_t) count, 
 			(uint8_t *) my_buff, &sectors_read); 
 
 		if(r == 0x80010002 || r == 0)
@@ -138,7 +130,7 @@ DRESULT disk_read (
 			break;
 		}
 
-		usleep(62500);
+		usleep (62500);
 	}
 	if(r == 0x80010002) //sys error
 	{
@@ -153,8 +145,8 @@ DRESULT disk_read (
     if(flag) 
 	{
 		if(r>=0)
-			memcpy(buff, my_buff, dev_sectsize[fd] * count);
-        free(my_buff);
+			memcpy (buff, my_buff, ss * count);
+        free (my_buff);
     }
 
     if(r < 0) 
@@ -183,16 +175,17 @@ DRESULT disk_write (
 {
 	DRESULT res = RES_PARERR;
     int flag = ((int) (s64) buff) & 31;
-	int fd = pdrv;
+	int fd = fflib_fd_get (pdrv);
+	int ss = fflib_ss_get (pdrv);
 
-    if (dev_fd[fd] < 0  || !buff)
+    if (fd < 0  || !buff || ss < 0)
 	{
 		return RES_PARERR;
 	}
     void *my_buff;
     
     if (flag) 
-		my_buff = memalign(32, dev_sectsize[fd] * count);
+		my_buff = memalign (32, ss * count);
 	else
 		my_buff = (void *) buff;
 
@@ -203,13 +196,13 @@ DRESULT disk_write (
 		return RES_ERROR;
 	}
     if (flag)
-		memcpy(my_buff, buff, dev_sectsize[fd] * count);
+		memcpy (my_buff, buff, ss * count);
 
     int r, k;
 	res = RES_OK;
 	for (k = 0; k < SYSIO_RETRY; k++)
 	{
-		r = sys_storage_write(dev_fd[fd], (uint32_t) sector, (uint32_t) count, 
+		r = sys_storage_write (fd, (uint32_t) sector, (uint32_t) count, 
 			(uint8_t *) my_buff, &sectors_read);
 
 		if (r == 0x80010002 || r ==0)
@@ -217,16 +210,16 @@ DRESULT disk_write (
 			break;
 		}
 
-		usleep(62500);
+		usleep (62500);
 	}
     if (flag)
-		free(my_buff);
+		free (my_buff);
 	
 	if (r == 0x80010002) //sys error
 	{
 		return RES_NOTRDY;//drive unplugged? detach from FS?
 	}
-	
+
     if (r < 0)
 	{
 		return RES_ERROR;
@@ -254,7 +247,9 @@ DRESULT disk_ioctl (
 )
 {
 	DRESULT res = RES_PARERR;
-	if (dev_fd[pdrv] < 0)
+	int fd = fflib_fd_get (pdrv);
+	u64 id = fflib_id_get (pdrv);
+	if (fd < 0 || id == 0)
 	{
 		return RES_NOTRDY;
 	}
@@ -269,7 +264,7 @@ DRESULT disk_ioctl (
 		{
 			static device_info_t disc_info;
 			disc_info.total_sectors = 0;
-			int rr = sys_storage_get_device_info(ff_ps3id[pdrv], &disc_info);
+			int rr = sys_storage_get_device_info (id, &disc_info);
 			if (rr != 0)
 			{
 				return RES_ERROR;
@@ -283,7 +278,7 @@ DRESULT disk_ioctl (
 		{
 			static device_info_t disc_info;
 			disc_info.sector_size = 0;
-			int rr = sys_storage_get_device_info(ff_ps3id[pdrv], &disc_info);
+			int rr = sys_storage_get_device_info (id, &disc_info);
 			if (rr != 0)
 			{
 				return RES_ERROR;
