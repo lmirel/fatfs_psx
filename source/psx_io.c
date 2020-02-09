@@ -57,7 +57,7 @@ int fflib_attach(int idx, u64 id, int now)
     return FR_OK;
 }
 
-int fflib_detach(int idx, u64 id)
+int fflib_detach(int idx)
 {
     if (idx < 0 || idx > MAXFDS)
         return FR_INVALID_DRIVE;
