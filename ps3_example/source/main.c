@@ -300,7 +300,6 @@ int fatfs_init()
 
 void LoadTexture()
 {
-
     u32 * texture_mem = tiny3d_AllocTexture(64*1024*1024); // alloc 64MB of space for textures (this pointer can be global)    
 
     u32 * texture_pointer; // use to asign texture space without changes texture_mem
@@ -316,6 +315,7 @@ void LoadTexture()
 
     // here you can add more textures using 'texture_pointer'. It is returned aligned to 16 bytes
 }
+
 //create file
 //f_write > create_chain > find_bitmap
 int file_read(char *fname);
