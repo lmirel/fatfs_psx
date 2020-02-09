@@ -27,6 +27,7 @@ extern unsigned char msx[];
 #include "console.h"
 
 #include "ff.h"
+#include "psx_io.h"
 
 #define SDTEST
 #ifdef SDTEST
@@ -280,18 +281,15 @@ int sdopen2 (int i)
 
 int fatfs_init()
 {
+    fflib_init();
     //
     int k; for (k = 0; k < 8; k++)
     {
-        //snprintf(lbuf, 10, "%d:/", i);
-        //f_mount(fs, lbuf, 0);                    /* Mount the default drive */
         fdld[k][0] = '\0';
-        fddr[k] = sdopen(k);
+        fddr[k] = fflib_attach (k, ff_ps3id[k], 1);
         DPrintf("open drive %d result %d for 0x%llx\n", k, fddr[k], (long long unsigned int)ff_ps3id[k]);
-        //fddr[i] = f_opendir (&fdir, lbuf);
-        //if (fddr[i] == FR_OK)
-        //    f_closedir (&fdir);
-        //f_mount(0, lbuf, 0);                    /* Mount the default drive */
+        if (fddr[k] == FR_OK)
+            sdopen (k);
     }
     //
     return 0;
