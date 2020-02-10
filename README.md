@@ -3,7 +3,9 @@ embedded fatfs/exfat implementation for psx
 
 original implementation comes from http://elm-chan.org/fsw/ff/00index_e.html
 --
+
 FatFs is a generic FAT/exFAT filesystem module for small embedded systems. The FatFs module is written in compliance with ANSI C (C89) and completely separated from the disk I/O layer. Therefore it is independent of the platform. It can be incorporated into small microcontrollers with limited resource, such as 8051, PIC, AVR, ARM, Z80, RX and etc. Also Petit FatFs module is available for tiny microcontrollers.
+
 --
 check ffconf.h for enabled functionality and change if/as needed
 
