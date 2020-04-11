@@ -27,7 +27,7 @@ extern unsigned char msx[];
 #include "console.h"
 
 #include "ff.h"
-#include "psx_io.h"
+#include "fflib.h"
 
 #define SDTEST
 #ifdef SDTEST
@@ -84,6 +84,7 @@ char fdld[8][256];
 char fn[256] = {0};
 char wn[256] = {0};
 char dn[256] = {0};
+int ffd = -1;
 static u64 ff_ps3id[8] = {
 	0x010300000000000AULL, 0x010300000000000BULL, 0x010300000000000CULL, 0x010300000000000DULL,
 	0x010300000000000EULL, 0x010300000000000FULL, 0x010300000000001FULL, 0x0103000000000020ULL 
@@ -248,6 +249,8 @@ int sdopen (int i)
     int ret = f_mount(&fs, lbuf, 0);                    /* Mount the default drive */
     if (ret != FR_OK)
         return ret;
+    if (ffd == -1)
+        ffd = i;
     ret = scan_files(lbuf); //f_opendir (&fdir, lbuf);
     f_mount(NULL, lbuf, 0);                    /* UnMount the default drive */
     //
@@ -315,7 +318,109 @@ void LoadTexture()
 
     // here you can add more textures using 'texture_pointer'. It is returned aligned to 16 bytes
 }
-
+//file write perf
+int file_write_perf (int idx)
+{
+    time_t timer, timere;
+    struct tm * timed;
+    FATFS fs0;          /* Work area (filesystem object) for logical drives */
+    FIL fdst;           /* File objects */
+    #define MSZ (1024*1024)
+    #define FWR (MSZ*1024)/* 1GB as slices of 1MB */
+    #define BSZ (3*MSZ)
+    BYTE *buffer = NULL;//[BSZ];   /* File copy buffer */
+    FRESULT fr;         /* FatFs function common result code */
+    UINT bw;            /* File read/write count */
+    char fn[25];
+    snprintf (fn, 25, "%d:/file_write.bin", idx);
+    /* Register work area for each logical drive */
+    f_mount (&fs0, fn, 0);
+    //test writing 1G
+    /* Create destination file on the drive 0 */
+    fr = f_open (&fdst, fn, FA_WRITE | FA_CREATE_ALWAYS);
+    if (fr)
+    {
+        DPrintf ("!failed to create file '%s'\n", fn);
+        return (int)fr;
+    }
+    /* Copy buffer to destination */
+    buffer = malloc (BSZ);
+    if (buffer == NULL)
+    {
+        DPrintf ("!failed to allocate buffer of %dbytes\n", BSZ);
+        return FR_INT_ERR;
+    }
+    //
+    DPrintf ("writing %dMB to file '%s'.. please wait\n", FWR/MSZ, fn);
+    //
+    time (&timer);
+    timed = localtime (&timer);
+    DPrintf ("writing %d blocks of %dMB: ", FWR/BSZ, BSZ/MSZ);
+    time (&timer);
+    int k; for (k = 0; k < FWR/BSZ; k++)
+    {
+        fr = f_write (&fdst, buffer, BSZ, &bw);            /* Write it to the destination file */
+        if (fr || bw < BSZ)
+            break; /* error or disk full */
+        //usleep (100000);
+        DPrintf ("..%d ", k + 1);
+        if (app_input(0) & PAD_CI_MASK)
+            break;
+        DbgDraw ();
+        tiny3d_Flip ();
+    }
+    time (&timere);
+    /* Close open files */
+    f_close (&fdst);
+    DPrintf ("done.\n");
+    int mbps = (k*BSZ)/(timere - timer);
+    if (mbps > MSZ)
+        DPrintf ("wrote %dMB to file '%s' in %dsec (%dMBps) bs %dbytes\n", (k*BSZ)/MSZ, fn, (timere - timer), mbps/MSZ, BSZ);
+    else if (mbps > 1024)
+        DPrintf ("wrote %dKB to file '%s' in %dsec (%dKBps) bs %dbytes\n", k*BSZ/1024, fn, (timere - timer), mbps/1024, BSZ);
+    //
+    FILINFO fno;
+    if (f_stat (fn, &fno) == FR_OK)
+        DPrintf ("FS: '%s' size: %luMB\n", fn, fno.fsize/MSZ);
+    else
+        DPrintf ("FS: '%s' size check failed!\n", fn);
+    //test reading
+    /* Open source file on the drive 1 */
+    fr = f_open (&fdst, fn, FA_READ);
+    if (fr == FR_OK)
+    {
+        DPrintf ("reading from file '%s'.. please wait\n", fn);
+        //
+        time (&timer);
+        DPrintf ("reading blocks of %dMB: ", BSZ/MSZ);
+        /* Copy source to destination */
+        for (k = 0;;k++)
+        {
+            fr = f_read (&fdst, buffer, BSZ, &bw);  /* Read a chunk of source file */
+            if (fr || bw == 0)
+                break; /* error or eof */
+            DPrintf ("..%d ", k + 1);
+            if (app_input(0) & PAD_CI_MASK)
+                break;
+            DbgDraw ();
+            tiny3d_Flip ();
+        }
+        time (&timere);
+        /* Close open files */
+        f_close (&fdst);
+        DPrintf ("done.\n");
+        mbps = (k*BSZ)/(timere - timer);
+        if (mbps > MSZ)
+            DPrintf ("read %dMB from file '%s' in %dsec (%dMBps) bs %dbytes\n", (k*BSZ)/MSZ, fn, (timere - timer), mbps/MSZ, BSZ);
+        else if (mbps > 1024)
+            DPrintf ("read %dKB to file '%s' in %dsec (%dKBps) bs %dbytes\n", k*BSZ/1024, fn, (timere - timer), mbps/1024, BSZ);
+    }
+    //
+    free (buffer);
+    /* Unregister work area prior to discard it */
+    f_mount (NULL, fn, 0);
+    return (int)fr;
+}
 //create file
 //f_write > create_chain > find_bitmap
 int file_read(char *fname);
@@ -653,17 +758,13 @@ int _app_restore (char init)
     DbgMess("Press o/circle to exit");
     DPrintf("\n");
     if (*fn)
-    {
         DPrintf("press triangle to list contents of file '%s'\n", fn);
-    }
     if (*wn)
-    {
         DPrintf("press cross to create a test file '%s'\n", wn);
-    }
     if (*dn)
-    {
         DPrintf("press rectangle to list contents of dir '%s'\n", dn);
-    }
+    if (ffd != -1)
+        DPrintf("press start for write/read test on drive '%d:/'\n", ffd);
     return 0;
 }
 //
@@ -671,35 +772,42 @@ s32 main(s32 argc, const char* argv[])
 {
     //1 init
 	app_init (0);
-    int btn = 0;
     _app_restore (0);
+    int btn = app_input (0);
 	// Ok, everything is setup. Now for the main loop.
 	while(1) 
     {
         //2 input
-        btn = app_input(0);
+        btn = app_input (0);
         if (btn & PAD_CI_MASK)
             break;
         //file create
         else if(btn & PAD_CR_MASK)
         {
-            file_new(wn);
+            file_new (wn);
             //
-            _app_restore(1);
+            _app_restore (1);
         }
         //file contents
         else if(btn & PAD_TR_MASK)
         {
-            file_run(fn);
+            file_run (fn);
             //
-            _app_restore(1);
+            _app_restore (1);
         }
         //dir listing
         else if(btn & PAD_SQ_MASK)
         {
-            dir_run(dn);
+            dir_run (dn);
             //
-            _app_restore(1);
+            _app_restore (1);
+        }
+        //file write
+        else if(btn & PAD_ST_MASK)
+        {
+            if (ffd != -1)
+                file_write_perf (ffd);
+            _app_restore (0);
         }
         //3
         app_update(0);

@@ -25,8 +25,10 @@
 #include <lv2/mutex.h> 
 #include <sys/errno.h>
 
-#include "psx_io.h"
+#include "fflib.h"
 
+//extern void NPrintf(const char* fmt, ...);
+#define NPrintf(...)
 # if 0
 DWORD get_fattime (void)
 {
@@ -35,7 +37,7 @@ DWORD get_fattime (void)
 #endif
 static DSTATUS fatfs_dev_init(int idx)
 {
-    int rr, ss;
+    int rr;
 	static device_info_t disc_info;
 	disc_info.unknown03 = 0x12345678; // hack for Iris Manager Disc Less
 	disc_info.sector_size = 0;
@@ -45,9 +47,8 @@ static DSTATUS fatfs_dev_init(int idx)
 	rr = sys_storage_get_device_info (id, &disc_info);
 	if(rr != 0)  
 	{
-		ss = 512; 
+		disc_info.sector_size = 512; 
 	}
-	ss = disc_info.sector_size;
 
 	if(fflib_fd_get (idx) >= 0)
 		return RES_OK;
@@ -57,7 +58,7 @@ static DSTATUS fatfs_dev_init(int idx)
 		return RES_NOTRDY;
 	}
 	fflib_fd_set (idx, fd);
-	fflib_ss_set (idx, ss);
+	fflib_ss_set (idx, disc_info.sector_size);
 
 	return RES_OK;
 }
@@ -103,6 +104,7 @@ DRESULT disk_read (
 	int fd = fflib_fd_get (pdrv);
 	int ss = fflib_ss_get (pdrv);
     int flag = ((int) (s64) buff) & 31;
+	NPrintf ("disk_read d %d s %d c %d, df %d ss %d\n", pdrv, sector, count, fd, ss);
 
     if (fd < 0 || !buff || ss < 0)
 		return RES_PARERR;
@@ -114,7 +116,7 @@ DRESULT disk_read (
 	else 
 		my_buff = buff;
 
-    if(!my_buff) 
+    if(!my_buff)
 		return RES_ERROR;
 
     uint32_t sectors_read;
@@ -132,6 +134,7 @@ DRESULT disk_read (
 
 		usleep (62500);
 	}
+	NPrintf ("disk_read r %d sr %d, d %d s %d c %d, df %d ss %d\n", r, sectors_read, pdrv, sector, count, fd, ss);
 	if(r == 0x80010002) //sys error
 	{
 		if(flag) 
@@ -139,6 +142,7 @@ DRESULT disk_read (
 			free(my_buff);
 		}
 		//drive unplugged? detach?
+		NPrintf ("!disk_read RES_NOTRDY res %d, d %d s %d c %d, df %d ss %d\n", r, pdrv, sector, count, fd, ss);
 		return RES_NOTRDY;
 	}
 	
@@ -153,8 +157,11 @@ DRESULT disk_read (
 		return RES_ERROR;
 
     if(sectors_read != count) 
+	{
+		NPrintf ("!disk_read RES_ERROR res %d, d %d s %d c %d, df %d ss %d\n", r, pdrv, sector, count, fd, ss);
 		return RES_ERROR;
-	
+	}
+
 	return res;
 }
 
