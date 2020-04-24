@@ -22,6 +22,8 @@
 #include "ff.h"			/* Declarations of FatFs API */
 #include "diskio.h"		/* Declarations of device I/O functions */
 
+//extern void NPrintf(const char* fmt, ...);
+#define NPrintf(...)
 
 /*--------------------------------------------------------------------------
 
@@ -3978,8 +3980,6 @@ FRESULT f_read (
 /*-----------------------------------------------------------------------*/
 // Open or Create a File for sectors access
 /*-----------------------------------------------------------------------*/
-extern void NPrintf(const char* fmt, ...);
-//#define NPrintf(...)
 FRESULT f_open_sectors (
 	FIL* fp,			/* Pointer to the blank file object */
 	const TCHAR* path,	/* Pointer to the file name */
@@ -4227,7 +4227,7 @@ FRESULT f_read_sectors (
 					cc = fs->csize - csect;
 				}
 				//if (disk_read(fs->pdrv, rbuff, sect, cc) != RES_OK) ABORT(fs, FR_DISK_ERR);
-        //NPrintf ("disk_read1: sect %u, cc %u, clust %u\n", sect, cc, fp->clust);
+        NPrintf ("disk_read1: sect %u, cc %u, clust %u\n", sect, cc, fp->clust);
 				if (record_cbk)
 					record_cbk (sect, cc);
 #if !FF_FS_READONLY && FF_FS_MINIMIZE <= 2		/* Replace one of the read sectors with cached data if it contains a dirty sector */

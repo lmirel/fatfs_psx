@@ -40,7 +40,7 @@ INCLUDES	:=	include ../include
 #---------------------------------------------------------------------------------
 # any extra libraries we wish to link with the project
 #---------------------------------------------------------------------------------
-LIBS		:=	../../libfatfs.a -lsysfs -lfont -ltiny3d -lsimdmath -lgcm_sys -lnet -lio -lsysutil -lrt -llv2 -lsysmodule -lm
+LIBS		:=	../../libfatfs.a ../libcobra.a -lsysfs -lfont -ltiny3d -lsimdmath -lgcm_sys -lnet -lio -lsysutil -lrt -llv2 -lsysmodule -lm
 
 
 #---------------------------------------------------------------------------------

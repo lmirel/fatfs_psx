@@ -104,6 +104,7 @@ int sdopen (int fd)
     return ret;
 }
 #else
+
 //tools
 FRESULT scan_files2 (
     char* path        /* Start node to be scanned (***also used as work area***) */
@@ -277,6 +278,48 @@ int record_add(unsigned int sect, unsigned int nsec)
     return 0;
 }
 
+#include "cobra.h"
+
+#define MAX_SECTIONS	((0x10000-sizeof(rawseciso_args))/8)
+typedef struct
+{
+	uint64_t device;
+	uint32_t emu_mode;
+	uint32_t num_sections;
+	uint32_t num_tracks;
+} __attribute__((packed)) rawseciso_args;
+
+void cobra_MountISO()
+{
+	int i;
+
+    uint8_t *plugin_args = malloc(0x20000);
+    uint32_t *sections = malloc(MAX_SECTIONS * sizeof(uint32_t));
+    uint32_t *sections_size = malloc(MAX_SECTIONS * sizeof(uint32_t));
+    rawseciso_args *p_args;  
+    memset(sections, 0, MAX_SECTIONS * sizeof(uint32_t));
+    memset(sections_size, 0, MAX_SECTIONS * sizeof(uint32_t));
+    memset(plugin_args, 0, 0x10000);
+
+    int parts = sidx;
+    //int parts = ps3ntfs_file_to_sectors(GamPath, sections, sections_size, MAX_SECTIONS, 1);
+    memcpy (sections, sects, sizeof(uint32_t) * parts);
+    memcpy (sections_size, nsect, sizeof(uint32_t) * parts);
+
+    if (parts > 0 && parts < MAX_SECTIONS) 
+    {
+        p_args = (rawseciso_args *)plugin_args;
+        p_args->device = 0x10300000000000a;//USB_MASS_STORAGE(NTFS_Test_Device(&GamPath[1]));
+        p_args->emu_mode = EMU_PS3;
+        p_args->num_sections = parts;
+        p_args->num_tracks = 0;
+        memcpy (plugin_args + sizeof(rawseciso_args), sections, parts * sizeof (uint32_t));
+        memcpy (plugin_args + sizeof(rawseciso_args) + (parts * sizeof (uint32_t)), sections_size, parts * sizeof(uint32_t)); 
+        cobra_unload_vsh_plugin(0);
+        if (cobra_load_vsh_plugin (0, "/dev_hdd0/game/MANAGUNZ0/USRDIR/sys/sprx_iso", plugin_args, 0x10000) == 0) return;
+    }
+}
+
 int file_scan_sectors (int i)
 {
     char lbuf[10];
@@ -313,10 +356,12 @@ int file_scan_sectors (int i)
     /* Open source file on the drive 1 */
     FRESULT fr;         /* FatFs function common result code */
     FIL fdst;           /* File objects */
-    char *lfn = "0:/BIA HH.iso"; //"0:/BLES00986 Rock Band 3.iso"; //"0:/file_write.bin";
+    char *lfn = "0:/BIA HH.iso"; //"0:/BLES00986 Rock Band 3.iso"; "0:/file_write.bin";
     FILINFO fno;
     if (f_stat (lfn, &fno) == FR_OK)
         DPrintf ("FS: '%s' size: %luMB, %luB\n", lfn, fno.fsize/MSZ, fno.fsize);
+    
+    #if 0
     UINT csect, lsect, sktr = 0, sk = 0, k, bw = 0;
     fr = f_open_sectors (&fdst, lfn, FA_READ, &record_add);
     if (fr == FR_OK)
@@ -348,8 +393,9 @@ int file_scan_sectors (int i)
             //if (bw == fno.fsize)
             if (bw == 0)
             {
+                sidx++; //we may end up with only one entry in best case
                 unsigned int fas = clst2sect(&fs, fdst.clust) + fs.csize;
-                DPrintf ("finished recording %d sector entries from sector %u (0x%x) to sector %u (0x%x)\n", ++sidx, sects[0], sects[0], fas, fas);
+                DPrintf ("finished recording %d sector entries from sector %u (0x%x) to sector %u (0x%x)\n", sidx, sects[0], sects[0], fas, fas);
                 break; /* error or eof */
             }
             //sktr += fs.csize/2;//add sector size
@@ -365,8 +411,12 @@ int file_scan_sectors (int i)
     free(buffer);
     //
     f_mount(NULL, lbuf, 0);                    /* UnMount the default drive */
+    #endif
+    sidx = fflib_file_to_sectors (lfn, sects, nsect, MAX_SECTS, 1);
     //
+    DPrintf ("found %u sections\n", sidx);
     unsigned long rfsz = 0;
+    int k;
     for (k = 0; k < sidx; k++)
     {
         DPrintf ("section[%d]=0x%x size[%d]=0x%x\n", k, sects[k], k, nsect[k]);
@@ -374,6 +424,9 @@ int file_scan_sectors (int i)
     }
     DPrintf ("last sector is at %u (0x%x)\n", sects[k-1] + nsect[k-1], sects[k-1] + nsect[k-1]);
     DPrintf ("file size is %u sectors total, %luB on disk vs %luB actual\n", rfsz, rfsz * fs.ssize, fno.fsize);
+    //try to mount it
+    if (sidx)
+        cobra_MountISO ();
     //
     return FR_OK;
 }
