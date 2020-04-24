@@ -209,6 +209,175 @@ Volume size                 224 GB
 Used space                   21 MB
 Available space             224 GB
 #endif
+#define MSZ (1024*1024)
+#define FWR (MSZ*1024)/* 1GB as slices of 1MB */
+#define BSZ (3*MSZ)
+static LBA_t clst2sect (	/* !=0:Sector number, 0:Failed (invalid cluster#) */
+	FATFS* fs,		/* Filesystem object */
+	DWORD clst		/* Cluster# to be converted */
+)
+{
+	clst -= 2;		/* Cluster number is origin from 2 */
+	if (clst >= fs->n_fatent - 2) return 0;		/* Is it invalid cluster number? */
+	return fs->database + (LBA_t)fs->csize * clst;	/* Start sector number of the cluster */
+}
+
+FRESULT f_open_sectors (
+	FIL* fp,			/* Pointer to the blank file object */
+	const TCHAR* path,	/* Pointer to the file name */
+	BYTE mode,			/* Access mode and file open mode flags */
+	int (*record_cbk)(unsigned int sect, unsigned int nsect)	//callback to run on disk access call
+);
+FRESULT f_read_sectors (
+	FIL* fp, 	/* Pointer to the file object */
+	void* buff,	/* Pointer to data buffer */
+	UINT btr,	/* Number of bytes to read */
+	UINT* br,	/* Pointer to number of bytes read */
+	int (*record_cbk)(unsigned int sect, unsigned int nsect)	//callback to run on disk access call
+);
+
+#define MAX_SECTS   1000
+unsigned int sects[MAX_SECTS];
+unsigned int nsect[MAX_SECTS];
+int sidx = 0;
+int record_add(unsigned int sect, unsigned int nsec)
+{
+    if (sidx == -1)
+    {
+        //can't record any more
+        return -1;
+    }
+    //NPrintf ("reading from sector %u for %u sectors\n", sect, nsec);
+    if (nsect[sidx] == 0)
+    {
+        sects[sidx] = sect;    //set start sector
+        nsect[sidx] = nsec;
+    }
+    else
+    {
+        //do we need to add to the same?
+        if (sects[sidx] + nsect[sidx] == sect)
+        {
+            nsect[sidx] += nsec;
+        }
+        else
+        {
+            //register new section
+            sidx++;
+            if (sidx >= MAX_SECTS)
+                sidx = -1;
+            else
+            {
+                sects[sidx] = sect;    //set start section sector
+                nsect[sidx] = nsec;
+            }
+        }
+    }
+    
+    return 0;
+}
+
+int file_scan_sectors (int i)
+{
+    char lbuf[10];
+    FATFS fs;     /* Ponter to the filesystem object */
+    FDIR fdir;
+    snprintf(lbuf, 10, "%d:/", i);
+    int ret = f_mount(&fs, lbuf, 0);                    /* Mount the default drive */
+    if (ret != FR_OK)
+        return ret;
+    ret = f_opendir (&fdir, lbuf);
+    if (ret == FR_OK)
+    {
+        FATFS *fsp = fdir.obj.fs;
+        DPrintf("fs on '%s' drive: %d, type: %d\n", lbuf, i, fsp->fs_type);
+        DPrintf("sector size: %d, cluster size [sectors]: %d, size of an FAT [sectors]: %d\n", fsp->ssize, fsp->csize, fsp->fsize);
+        DPrintf("number of FAT entries (number of clusters + 2): %d, number of FATs (1 or 2): %d\n", fsp->n_fatent, fsp->n_fats);
+        DPrintf("last cluster: %d, free clusters: %d\n", fsp->last_clst, fsp->free_clst);
+        unsigned long capa = fsp->n_fatent / 1024;
+        capa *= fsp->ssize;
+        capa /= 1024;
+        capa *= fsp->csize;
+        capa /= 1024;
+        DPrintf("capacity: %luGB\n", capa);
+        f_closedir (&fdir);
+    }
+    //emulate file_to_sectors
+    BYTE *buffer = malloc (BSZ);
+    if (buffer == NULL)
+    {
+        DPrintf ("!failed to allocate buffer of %dbytes\n", BSZ);
+        return FR_INT_ERR;
+    }
+
+    /* Open source file on the drive 1 */
+    FRESULT fr;         /* FatFs function common result code */
+    FIL fdst;           /* File objects */
+    char *lfn = "0:/BIA HH.iso"; //"0:/BLES00986 Rock Band 3.iso"; //"0:/file_write.bin";
+    FILINFO fno;
+    if (f_stat (lfn, &fno) == FR_OK)
+        DPrintf ("FS: '%s' size: %luMB, %luB\n", lfn, fno.fsize/MSZ, fno.fsize);
+    UINT csect, lsect, sktr = 0, sk = 0, k, bw = 0;
+    fr = f_open_sectors (&fdst, lfn, FA_READ, &record_add);
+    if (fr == FR_OK)
+    {
+        DPrintf ("reading %luB from file '%s'.. please wait\n", fno.fsize, lfn);
+        DPrintf ("current sector: %u, dirsect %u\n", fdst.sect, fdst.dir_sect);
+    #if 1
+        csect = fdst.clust;//clst2sect(&fs, fdst.clust);
+        lsect = csect;
+        UINT lbsz = fs.ssize + fs.csize;    //force reading a cluster at a time: csize number of sectors
+        //
+        for (k=0; ;k++)
+        {
+            fr = f_read_sectors (&fdst, NULL, BSZ * 100, &bw, &record_add);  /* Read a chunk of source file */
+            #if 0
+            //fr = f_lseek (&fdst, sktr);  /* Read a chunk of source file */
+            csect = fdst.clust;//clst2sect(&fs, fdst.clust);
+            //DPrintf ("%d.. ", k);
+            //DPrintf ("current sector/cluster %u/%u, pos %lu ret %d", csect, fdst.clust, sktr, fr);
+            if (csect != lsect)
+            {
+                lsect = csect;
+                DPrintf ("current sector: %u cluster %u, ssect %u\n", lsect, csect, clst2sect(&fs, fdst.clust));
+                sk++;
+            }
+            #endif
+            //if (fr != FR_OK || bw == 0)
+            //if (fr != FR_OK || bw == 0)
+            //if (bw == fno.fsize)
+            if (bw == 0)
+            {
+                unsigned int fas = clst2sect(&fs, fdst.clust) + fs.csize;
+                DPrintf ("finished recording %d sector entries from sector %u (0x%x) to sector %u (0x%x)\n", ++sidx, sects[0], sects[0], fas, fas);
+                break; /* error or eof */
+            }
+            //sktr += fs.csize/2;//add sector size
+            if (app_input(0) & PAD_CI_MASK)
+                break;
+            DbgDraw ();
+            tiny3d_Flip ();
+        }
+    #endif
+        //
+        f_close(&fdst);
+    }
+    free(buffer);
+    //
+    f_mount(NULL, lbuf, 0);                    /* UnMount the default drive */
+    //
+    unsigned long rfsz = 0;
+    for (k = 0; k < sidx; k++)
+    {
+        DPrintf ("section[%d]=0x%x size[%d]=0x%x\n", k, sects[k], k, nsect[k]);
+        rfsz += nsect[k];
+    }
+    DPrintf ("last sector is at %u (0x%x)\n", sects[k-1] + nsect[k-1], sects[k-1] + nsect[k-1]);
+    DPrintf ("file size is %u sectors total, %luB on disk vs %luB actual\n", rfsz, rfsz * fs.ssize, fno.fsize);
+    //
+    return FR_OK;
+}
+
 int fs_info(int i)
 {
     char lbuf[10];
@@ -325,9 +494,6 @@ int file_write_perf (int idx)
     struct tm * timed;
     FATFS fs0;          /* Work area (filesystem object) for logical drives */
     FIL fdst;           /* File objects */
-    #define MSZ (1024*1024)
-    #define FWR (MSZ*1024)/* 1GB as slices of 1MB */
-    #define BSZ (3*MSZ)
     BYTE *buffer = NULL;//[BSZ];   /* File copy buffer */
     FRESULT fr;         /* FatFs function common result code */
     UINT bw;            /* File read/write count */
@@ -807,6 +973,13 @@ s32 main(s32 argc, const char* argv[])
         {
             if (ffd != -1)
                 file_write_perf (ffd);
+            _app_restore (0);
+        }
+        //file scan
+        else if(btn & PAD_DN_MASK)
+        {
+            if (ffd != -1)
+                file_scan_sectors (ffd);
             _app_restore (0);
         }
         //3

@@ -6,53 +6,54 @@
 #include <math.h>
 #include <stdarg.h>
 
+#ifdef LIBBUILD
+void NPrintf (const char* fmt, ...) { }
+void initConsole() {}
+#else
 #include "console.h"
 
 #include <tiny3d.h>
 #include <libfont.h>
 
 //network debug via UDP
-#ifndef DEBUG_IP
-#define DEBUG_IP "192.168.2.185"
-#endif
-
 #ifdef DEBUG_IP
 #include <net/net.h>
 #include <netinet/in.h>
 
 static int SocketFD;
 #define DEBUG_PORT 18194
-
-void debugInit()
+#endif
+void debugInit ()
 {
+#ifdef DEBUG_IP
+#warning using network debug
   struct sockaddr_in stSockAddr;
-  netInitialize();
-  SocketFD = netSocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  netInitialize ();
+  SocketFD = netSocket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
-  memset(&stSockAddr, 0, sizeof stSockAddr);
+  memset (&stSockAddr, 0, sizeof stSockAddr);
 
   stSockAddr.sin_family = AF_INET;
-  stSockAddr.sin_port = htons(DEBUG_PORT);
-  inet_pton(AF_INET, DEBUG_IP, &stSockAddr.sin_addr);
+  stSockAddr.sin_port = htons (DEBUG_PORT);
+  inet_pton (AF_INET, DEBUG_IP, &stSockAddr.sin_addr);
 
-  netConnect(SocketFD, (struct sockaddr *)&stSockAddr, sizeof stSockAddr);
+  netConnect (SocketFD, (struct sockaddr *)&stSockAddr, sizeof stSockAddr);
 	
-  NPrintf("network debug module initialized\n") ;
-  NPrintf("ready to have a lot of fun\n") ;
-}
+  NPrintf ("network debug module initialized\n") ;
+  NPrintf ("ready to have a lot of fun\n") ;
 #endif
-void NPrintf(const char* fmt, ...)
+}
+
+void NPrintf (const char* fmt, ...)
 {
 #ifdef DEBUG_IP
   char buffer[0x800];
   va_list arg;
-  va_start(arg, fmt);
-  vsnprintf(buffer, sizeof(buffer), fmt, arg);
-  va_end(arg);
+  va_start (arg, fmt);
+  vsnprintf (buffer, sizeof (buffer), fmt, arg);
+  va_end (arg);
   //
-  netSend(SocketFD, buffer, strlen(buffer), 0);
-#else
-  return;
+  netSend (SocketFD, buffer, strlen (buffer), 0);
 #endif
 }
 
@@ -180,3 +181,5 @@ void DPrintf(char *format, ...)
     }
 
 }
+
+#endif

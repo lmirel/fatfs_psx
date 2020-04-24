@@ -11,7 +11,55 @@
 #include "ff.h"
 #include "fflib.h"
 
-#define VER "v0.2.0"
+#define VER "v0.3.0"
+
+/*
+you'll need these in the Makefile of your app in order to have actual access to raw devices
+# aditional scetool flags (--self-ctrl-flags, --self-cap-flags...)
+SCETOOL_FLAGS	+=	--self-ctrl-flags 4000000000000000000000000000000000000000000000000000000000000002
+SCETOOL_FLAGS	+=	--self-cap-flags 00000000000000000000000000000000000000000000007B0000000100000000
+
+**file_to_sectors**
+@Zar, thanks!
+"file_to_sectors is a function to get the sectors offsets of the iso from the usb device raw data (offset used by storage functions)
+
+int parts = file_to_sectors( char *GamePath, u32 *sections, u32 *sections_size, u32 MAX_SECTIONS);
+
+input : GamePath : the path of the file. For example, "/dev_usb000/GAMES/mygame.iso"
+input : MAX_SECTIONS : number max of sections (allocated in memory). For example, MAX_SECTIONS = "((0x10000-sizeof(rawseciso_args))/8)"
+
+output : parts : number of sections. For example, parts = 2
+output : sections : offset of section used by the file . For example, sections[0] = 0x00223344, sections[1]=0x11223344
+output : sections_size : size of each sections. For example, sections[0] = 0x800, sections[1]=0x800 
+"
+
+@aldostools, thanks!
+"
+That is the function used by prepNTFS to allow backup managers see the ISOs as native files.
+
+prepNTFS or IRISMAN call that function for every ISO scanned or processed by selection in the case of IRISMAN.
+The function file_to_sectors generate 2 lists: one is the list with the address of the initial raw sectors for each segment of the ISO file passed as parameter, the other is a list with the size of each segment (consecutive raw sectors).
+If the ISO is multi-part, the lists of each multi-part file are appended to the initial lists.
+
+Then the application creates a config file with a header containing the parameters needed by "rawseciso" plugin to access the storage in raw mode and the list of raw sectors and size of segments file needed to read the whole ISO file. The config file is stored in a native file system for later use.
+
+For these ISO stored in non-standard file systems (ntfs, ext3) the backup manager read these config files and list them as "ISO files" stored in ntfs/ext3. For instance: /dev_hdd0/tmp/wmtmp/My Game.iso.ntfs[PS3ISO] is displayed as /ntfs0:/PS3ISO/My Game.iso
+
+When the user mounts one of these ISO files, the backup manager starts the rawseciso plugin and passes the data of config file as parameter. The rawseciso plugin acts as intermediary between Cobra and the storage device. It starts the discfile_proxy in Cobra and rawseciso plugin emulates the physical disc serving the sectors requested by the SCSI driver via Cobra's proxy.
+
+A retail game is accessed from disc (more or less) like this:
+Game <=> GameOS <=> SCSI <=> bluray driver <=> raw sectors
+
+An ISO file stored in a standard file system (hdd0/fat32) is accessed like this:
+Game <=> GameOS <=> SCSI <=> Cobra <=> cell file system <=> file data
+
+An ISO file stored in a non-standard file system (ntfs/ext3) is accessed like this:
+Game <=> GameOS <=> SCSI <=> Cobra <=> discfile_proxy <=> rawseciso plugin <=> storage device <=> raw sectors
+
+A remote ISO is accessed like this:
+Game <=> GameOS <=> SCSI <=> Cobra <=> discfile_proxy <=> netiso plugin <=> net <=> ps3netsrv <=> file system <=> file data
+"
+*/
 
 //extern void NPrintf (const char* fmt, ...);
 #define NPrintf(fmt, ...)
@@ -153,6 +201,46 @@ int fflib_ss_set(int idx, int ss)
     return ss;
 }
 
+// maps a file to a list of sectors and its sizes, based on a maximum buffer provided by caller
+/* usage example from IRISMAN:
+    // use plugin
+    plugin_args = malloc(0x20000);
+
+    psxseciso_args *p_args;
+
+    memset(plugin_args, 0, 0x10000);
+
+    p_args = (psxseciso_args *)plugin_args;
+    p_args->device = 0ULL;
+    p_args->emu_mode = EMU_PSX_MULTI;
+
+    int max_parts = (0x10000 - sizeof(psxseciso_args)) / 8;
+
+    uint32_t *sections = malloc(max_parts * sizeof(uint32_t));
+    uint32_t *sections_size = malloc(max_parts * sizeof(uint32_t));
+
+    u32 offset = 0;
+
+    for(n = 0; n < nfiles; n++)
+    {
+        if(stat(files[n], &s)) s.st_size = 0x40000000;
+        if(!strncmp(files[n], "/ntfs", 5) || !strncmp(files[n], "/ext", 4))
+        {
+            if(p_args->device == 0) p_args->device = USB_MASS_STORAGE(NTFS_Test_Device(((char *) files[n])+1));
+
+            memset(sections, 0, max_parts * sizeof(uint32_t));
+            memset(sections_size, 0, max_parts * sizeof(uint32_t));
+            int parts = ps3ntfs_file_to_sectors(files[n], sections, sections_size, max_parts, 1);
+            if(parts <=0 || parts >= max_parts)
+            {
+                if(sections) free(sections);
+                if(sections_size) free(sections_size);
+                if(plugin_args) free(plugin_args); plugin_args = NULL;
+
+                sprintf(temp_buffer, "Too much parts in PSX iso:\n%s", files[n]);
+                ..
+            }
+*/
 int fflib_file_to_sectors(const char *path, uint32_t *sec_out, uint32_t *size_out, int max, int phys)
 {
 #if 0
